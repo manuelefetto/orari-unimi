@@ -6,17 +6,26 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
+	"path/filepath"
 
+	"orari-unimi/tui"
 	"orari-unimi/unimi"
 )
 
 func main() {
-	tipo := flag.String("tipo", "anni", "lista da recuperare: anni, corsi, facolta, docenti o insegnamenti")
+	tipo := flag.String("tipo", "", "stampa una lista senza aprire la TUI: anni, corsi, facolta, docenti o insegnamenti")
 	anno := flag.String("anno", "", "codice dell'anno accademico, ad esempio 2026; se omesso usa il più recente")
 	flag.Parse()
 
 	client := unimi.NuovoClient()
-	ctx := context.Background()
+	ctx, interrompi := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer interrompi()
+
+	if *tipo == "" {
+		avviaTUI(ctx, client)
+		return
+	}
 	if *tipo == "anni" {
 		anni, err := client.RecuperaAnniAccademici(ctx)
 		terminaSeErrore(err)
@@ -66,6 +75,23 @@ func main() {
 		flag.Usage()
 		os.Exit(2)
 	}
+}
+
+func avviaTUI(ctx context.Context, client *unimi.Client) {
+	defer tui.ChiudiTastiera()
+	percorso := os.Getenv("ORARI_UNIMI_FILE")
+	if percorso == "" {
+		cartella, err := os.UserConfigDir()
+		terminaSeErrore(err)
+		percorso = filepath.Join(cartella, "orari-unimi", "corsi.json")
+	}
+	archivio, err := tui.NuovoArchivioCorsi(percorso)
+	terminaSeErrore(err)
+	lettore, err := tui.NuovoLettoreTastiera(os.Stdout)
+	terminaSeErrore(err)
+	applicazione, err := tui.NuovaApplicazione(lettore, os.Stdout, client, archivio, tui.NuovoSelettoreManuCLI())
+	terminaSeErrore(err)
+	terminaSeErrore(applicazione.Esegui(ctx))
 }
 
 func terminaSeErrore(err error) {

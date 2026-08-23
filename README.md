@@ -2,18 +2,31 @@
 
 Applicazione Go per consultare da terminale gli orari delle lezioni UNIMI.
 
-## Fase 1: recupero delle liste
+## Avvio
 
-Il package `unimi` usa esclusivamente la libreria standard e permette di
-recuperare dal portale pubblico:
+```sh
+go run ./cmd/orari-unimi
+```
+
+I menu e le scelte interattive usano
+[ManuCli](https://github.com/manuelefetto/ManuCli): usa le frecce verticali per
+spostarti e `Invio` per confermare. È possibile cercare corsi, docenti e singoli
+insegnamenti attraverso suggerimenti ottenuti dal portale UNIMI, oltre a gestire
+i corsi salvati nella sezione "I miei orari".
+La ricerca non distingue tra maiuscole, minuscole e vocali accentate.
+
+I corsi personali vengono salvati in `orari-unimi/corsi.json` all'interno della
+cartella di configurazione dell'utente. Il percorso può essere personalizzato
+impostando la variabile d'ambiente `ORARI_UNIMI_FILE`.
+
+## Recupero delle liste
 
 - anni accademici;
 - corsi di studio e facoltà/scuole;
 - docenti;
 - insegnamenti.
 
-Tutte le richieste accettano un `context.Context`. Il comando provvisorio della
-fase 1 consente di controllare i risultati prima della realizzazione della TUI:
+## Comandi diagnostici per l'ottenimento delle liste
 
 ```sh
 go run ./cmd/orari-unimi -tipo anni
