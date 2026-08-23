@@ -10,7 +10,10 @@ import (
 	"orari-unimi/unimi"
 )
 
-const numeroSuggerimenti = 10
+const (
+	numeroSuggerimenti = 10
+	pulisciTerminale   = "\x1b[2J\x1b[H"
+)
 
 type sorgenteUNIMI interface {
 	RecuperaAnniAccademici(context.Context) ([]unimi.AnnoAccademico, error)
@@ -25,27 +28,30 @@ type sorgenteUNIMI interface {
 // Applicazione gestisce la navigazione testuale e mantiene in memoria le liste
 // già scaricate durante la sessione.
 type Applicazione struct {
-	lettore   LettoreTesto
-	uscita    io.Writer
-	sorgente  sorgenteUNIMI
-	archivio  *ArchivioCorsi
-	selettore Selettore
-	anno      unimi.AnnoAccademico
-	corsi     []unimi.CorsoDiStudio
-	docenti   []unimi.Docente
-	attivita  []unimi.Insegnamento
+	lettore    LettoreTesto
+	uscita     io.Writer
+	sorgente   sorgenteUNIMI
+	archivio   *ArchivioInsegnamenti
+	selettore  Selettore
+	calendario VisualizzatoreCalendario
+	anno       unimi.AnnoAccademico
+	corsi      []unimi.CorsoDiStudio
+	docenti    []unimi.Docente
+	attivita   []unimi.Insegnamento
+	notifica   string
 }
 
-func NuovaApplicazione(lettore LettoreTesto, uscita io.Writer, sorgente sorgenteUNIMI, archivio *ArchivioCorsi, selettore Selettore) (*Applicazione, error) {
-	if lettore == nil || uscita == nil || sorgente == nil || archivio == nil || selettore == nil {
+func NuovaApplicazione(lettore LettoreTesto, uscita io.Writer, sorgente sorgenteUNIMI, archivio *ArchivioInsegnamenti, selettore Selettore, calendario VisualizzatoreCalendario) (*Applicazione, error) {
+	if lettore == nil || uscita == nil || sorgente == nil || archivio == nil || selettore == nil || calendario == nil {
 		return nil, errors.New("dipendenze dell'applicazione non valide")
 	}
 	return &Applicazione{
-		lettore:   lettore,
-		uscita:    uscita,
-		sorgente:  sorgente,
-		archivio:  archivio,
-		selettore: selettore,
+		lettore:    lettore,
+		uscita:     uscita,
+		sorgente:   sorgente,
+		archivio:   archivio,
+		selettore:  selettore,
+		calendario: calendario,
 	}, nil
 }
 
@@ -56,7 +62,9 @@ func (a *Applicazione) Esegui(ctx context.Context) error {
 	}
 
 	for {
-		fmt.Fprintf(a.uscita, "\nOrari UNIMI — anno accademico %s\n", a.anno.Nome)
+		a.pulisciSchermo()
+		a.mostraNotifica()
+		fmt.Fprintf(a.uscita, "Orari UNIMI — anno accademico %s\n", a.anno.Nome)
 		scelta, err := a.selettore.Scegli("Scegli come consultare gli orari", []string{
 			"Per corso",
 			"Per docente",
@@ -76,9 +84,10 @@ func (a *Applicazione) Esegui(ctx context.Context) error {
 			a.menuPerInsegnamento(ctx)
 		case 3:
 			if err := a.menuMieiOrari(ctx); err != nil {
-				fmt.Fprintf(a.uscita, "Errore: %v\n", err)
+				a.impostaNotifica("Errore: %v", err)
 			}
 		case 4:
+			a.pulisciSchermo()
 			fmt.Fprintln(a.uscita, "A presto!")
 			return nil
 		}
@@ -86,24 +95,26 @@ func (a *Applicazione) Esegui(ctx context.Context) error {
 }
 
 func (a *Applicazione) menuPerCorso(ctx context.Context) {
+	a.pulisciSchermo()
 	corso, selezionato, err := a.selezionaCorso(ctx)
 	if err != nil {
-		fmt.Fprintf(a.uscita, "Errore: %v\n", err)
+		a.impostaNotifica("Errore: %v", err)
 		return
 	}
 	if selezionato {
 		lezioni, err := a.sorgente.RecuperaOrariCorso(ctx, a.anno.Codice, corso.Codice, unimi.IntervalloDate{})
 		if err != nil {
-			fmt.Fprintf(a.uscita, "Errore: recupero orari del corso: %v\n", err)
+			a.impostaNotifica("Errore: recupero orari del corso: %v", err)
 			return
 		}
-		a.mostraRiepilogoOrari(corso.Nome, lezioni)
+		a.mostraCalendario(corso.Nome, lezioni)
 	}
 }
 
 func (a *Applicazione) menuPerDocente(ctx context.Context) {
+	a.pulisciSchermo()
 	if err := a.caricaDocenti(ctx); err != nil {
-		fmt.Fprintf(a.uscita, "Errore: %v\n", err)
+		a.impostaNotifica("Errore: %v", err)
 		return
 	}
 	voci := make([]voceRicerca, len(a.docenti))
@@ -112,54 +123,45 @@ func (a *Applicazione) menuPerDocente(ctx context.Context) {
 	}
 	voce, selezionata, err := a.selezionaConRicerca("Cerca docente", voci)
 	if err != nil {
-		fmt.Fprintf(a.uscita, "Errore: %v\n", err)
+		a.impostaNotifica("Errore: %v", err)
 		return
 	}
 	if selezionata {
 		lezioni, err := a.sorgente.RecuperaOrariDocente(ctx, a.anno.Codice, voce.Codice, unimi.IntervalloDate{})
 		if err != nil {
-			fmt.Fprintf(a.uscita, "Errore: recupero orari del docente: %v\n", err)
+			a.impostaNotifica("Errore: recupero orari del docente: %v", err)
 			return
 		}
-		a.mostraRiepilogoOrari(voce.Nome, lezioni)
+		a.mostraCalendario(voce.Nome, lezioni)
 	}
 }
 
 func (a *Applicazione) menuPerInsegnamento(ctx context.Context) {
-	if err := a.caricaInsegnamenti(ctx); err != nil {
-		fmt.Fprintf(a.uscita, "Errore: %v\n", err)
-		return
-	}
-	voci := make([]voceRicerca, len(a.attivita))
-	for i, insegnamento := range a.attivita {
-		nome := insegnamento.Descrizione
-		if strings.TrimSpace(nome) == "" {
-			nome = insegnamento.Nome
-		}
-		voci[i] = voceRicerca{Codice: insegnamento.Codice, Nome: nome}
-	}
-	voce, selezionata, err := a.selezionaConRicerca("Cerca insegnamento", voci)
+	a.pulisciSchermo()
+	insegnamento, selezionato, err := a.selezionaInsegnamento(ctx)
 	if err != nil {
-		fmt.Fprintf(a.uscita, "Errore: %v\n", err)
+		a.impostaNotifica("Errore: %v", err)
 		return
 	}
-	if selezionata {
-		lezioni, err := a.sorgente.RecuperaOrariInsegnamento(ctx, a.anno.Codice, voce.Codice, unimi.IntervalloDate{})
+	if selezionato {
+		lezioni, err := a.sorgente.RecuperaOrariInsegnamento(ctx, a.anno.Codice, insegnamento.Codice, unimi.IntervalloDate{})
 		if err != nil {
-			fmt.Fprintf(a.uscita, "Errore: recupero orari dell'insegnamento: %v\n", err)
+			a.impostaNotifica("Errore: recupero orari dell'insegnamento: %v", err)
 			return
 		}
-		a.mostraRiepilogoOrari(voce.Nome, lezioni)
+		a.mostraCalendario(nomeInsegnamento(insegnamento), lezioni)
 	}
 }
 
 func (a *Applicazione) menuMieiOrari(ctx context.Context) error {
 	for {
+		a.pulisciSchermo()
+		a.mostraNotifica()
 		scelta, err := a.selettore.Scegli("I miei orari", []string{
-			"Gli orari dei corsi selezionati",
-			"Aggiungi corso",
-			"Rimuovi corso",
-			"Pulisci corsi",
+			"Calendario degli insegnamenti salvati",
+			"Aggiungi insegnamento",
+			"Rimuovi insegnamento",
+			"Pulisci insegnamenti",
 			"Torna al menu principale",
 		})
 		if err != nil {
@@ -171,15 +173,15 @@ func (a *Applicazione) menuMieiOrari(ctx context.Context) error {
 				return err
 			}
 		case 1:
-			if err := a.aggiungiCorso(ctx); err != nil {
+			if err := a.aggiungiInsegnamento(ctx); err != nil {
 				return err
 			}
 		case 2:
-			if err := a.rimuoviCorso(); err != nil {
+			if err := a.rimuoviInsegnamento(); err != nil {
 				return err
 			}
 		case 3:
-			if err := a.pulisciCorsi(); err != nil {
+			if err := a.pulisciInsegnamenti(); err != nil {
 				return err
 			}
 		case 4:
@@ -205,6 +207,30 @@ func (a *Applicazione) selezionaCorso(ctx context.Context) (unimi.CorsoDiStudio,
 	return perCodice[voce.Codice], true, nil
 }
 
+func (a *Applicazione) selezionaInsegnamento(ctx context.Context) (unimi.Insegnamento, bool, error) {
+	if err := a.caricaInsegnamenti(ctx); err != nil {
+		return unimi.Insegnamento{}, false, err
+	}
+	voci := make([]voceRicerca, len(a.attivita))
+	perCodice := make(map[string]unimi.Insegnamento, len(a.attivita))
+	for i, insegnamento := range a.attivita {
+		voci[i] = voceRicerca{Codice: insegnamento.Codice, Nome: nomeInsegnamento(insegnamento)}
+		perCodice[insegnamento.Codice] = insegnamento
+	}
+	voce, selezionata, err := a.selezionaConRicerca("Cerca insegnamento", voci)
+	if err != nil || !selezionata {
+		return unimi.Insegnamento{}, false, err
+	}
+	return perCodice[voce.Codice], true, nil
+}
+
+func nomeInsegnamento(insegnamento unimi.Insegnamento) string {
+	if nome := strings.TrimSpace(insegnamento.Descrizione); nome != "" {
+		return nome
+	}
+	return strings.TrimSpace(insegnamento.Nome)
+}
+
 func (a *Applicazione) selezionaConRicerca(titolo string, voci []voceRicerca) (voceRicerca, bool, error) {
 	ricerca := ""
 	for {
@@ -225,12 +251,12 @@ func (a *Applicazione) selezionaConRicerca(titolo string, voci []voceRicerca) (v
 			ricerca = ""
 			continue
 		}
-		fmt.Fprintf(a.uscita, "Suggerimenti per %q:\n", ricerca)
 		opzioni := make([]string, 0, len(risultati)+2)
 		for _, voce := range risultati {
 			opzioni = append(opzioni, fmt.Sprintf("%s [%s]", voce.Nome, voce.Codice))
 		}
 		opzioni = append(opzioni, "Nuova ricerca", "Indietro")
+		a.pulisciSchermo()
 		scelta, err := a.selettore.Scegli(fmt.Sprintf("Suggerimenti per %q", ricerca), opzioni)
 		if err != nil {
 			return voceRicerca{}, false, err
@@ -246,94 +272,96 @@ func (a *Applicazione) selezionaConRicerca(titolo string, voci []voceRicerca) (v
 	}
 }
 
-func (a *Applicazione) aggiungiCorso(ctx context.Context) error {
-	corso, selezionato, err := a.selezionaCorso(ctx)
+func (a *Applicazione) aggiungiInsegnamento(ctx context.Context) error {
+	a.pulisciSchermo()
+	insegnamento, selezionato, err := a.selezionaInsegnamento(ctx)
 	if err != nil || !selezionato {
 		return err
 	}
-	aggiunto, err := a.archivio.Aggiungi(CorsoSalvato{Anno: a.anno.Codice, Codice: corso.Codice, Nome: corso.Nome})
+	nome := nomeInsegnamento(insegnamento)
+	aggiunto, err := a.archivio.Aggiungi(InsegnamentoSalvato{Anno: a.anno.Codice, Codice: insegnamento.Codice, Nome: nome})
 	if err != nil {
 		return err
 	}
 	if aggiunto {
-		fmt.Fprintf(a.uscita, "%s aggiunto ai tuoi corsi.\n", corso.Nome)
+		a.impostaNotifica("%s aggiunto ai tuoi insegnamenti.", nome)
 	} else {
-		fmt.Fprintln(a.uscita, "Il corso è già presente nei tuoi corsi.")
+		a.impostaNotifica("L'insegnamento è già presente nei tuoi orari.")
 	}
 	return nil
 }
 
 func (a *Applicazione) mostraOrariSalvati(ctx context.Context) error {
-	corsi, err := a.archivio.Elenca()
+	insegnamenti, err := a.archivio.Elenca()
 	if err != nil {
 		return err
 	}
-	if len(corsi) == 0 {
-		fmt.Fprintln(a.uscita, "Non hai ancora selezionato corsi.")
+	if len(insegnamenti) == 0 {
+		a.impostaNotifica("Non hai ancora salvato insegnamenti.")
 		return nil
 	}
 	lezioni := make([]unimi.Lezione, 0)
-	for _, corso := range corsi {
-		orariCorso, err := a.sorgente.RecuperaOrariCorso(ctx, corso.Anno, corso.Codice, unimi.IntervalloDate{})
+	for _, insegnamento := range insegnamenti {
+		orariInsegnamento, err := a.sorgente.RecuperaOrariInsegnamento(ctx, insegnamento.Anno, insegnamento.Codice, unimi.IntervalloDate{})
 		if err != nil {
-			return fmt.Errorf("recupero orari di %s: %w", corso.Nome, err)
+			return fmt.Errorf("recupero orari di %s: %w", insegnamento.Nome, err)
 		}
-		lezioni = append(lezioni, orariCorso...)
+		lezioni = append(lezioni, orariInsegnamento...)
 	}
-	a.mostraRiepilogoOrari("i corsi salvati", lezioni)
-	_, err = a.leggi("Premi INVIO per continuare: ")
-	return err
+	return a.apriCalendario("I miei orari", lezioni)
 }
 
-func (a *Applicazione) rimuoviCorso() error {
-	corsi, err := a.archivio.Elenca()
+func (a *Applicazione) rimuoviInsegnamento() error {
+	insegnamenti, err := a.archivio.Elenca()
 	if err != nil {
 		return err
 	}
-	if len(corsi) == 0 {
-		fmt.Fprintln(a.uscita, "Non ci sono corsi da rimuovere.")
+	if len(insegnamenti) == 0 {
+		a.impostaNotifica("Non ci sono insegnamenti da rimuovere.")
 		return nil
 	}
-	opzioni := make([]string, 0, len(corsi)+1)
-	for _, corso := range corsi {
-		opzioni = append(opzioni, fmt.Sprintf("%s [%s]", corso.Nome, corso.Codice))
+	opzioni := make([]string, 0, len(insegnamenti)+1)
+	for _, insegnamento := range insegnamenti {
+		opzioni = append(opzioni, fmt.Sprintf("%s [%s]", insegnamento.Nome, insegnamento.Codice))
 	}
 	opzioni = append(opzioni, "Annulla")
-	scelta, err := a.selettore.Scegli("Scegli il corso da rimuovere", opzioni)
+	a.pulisciSchermo()
+	scelta, err := a.selettore.Scegli("Scegli l'insegnamento da rimuovere", opzioni)
 	if err != nil {
 		return err
 	}
-	if scelta == len(corsi) {
+	if scelta == len(insegnamenti) {
 		return nil
 	}
 	if err := a.archivio.Rimuovi(scelta); err != nil {
 		return err
 	}
-	fmt.Fprintf(a.uscita, "%s rimosso dai tuoi corsi.\n", corsi[scelta].Nome)
+	a.impostaNotifica("%s rimosso dai tuoi insegnamenti.", insegnamenti[scelta].Nome)
 	return nil
 }
 
-func (a *Applicazione) pulisciCorsi() error {
-	corsi, err := a.archivio.Elenca()
+func (a *Applicazione) pulisciInsegnamenti() error {
+	insegnamenti, err := a.archivio.Elenca()
 	if err != nil {
 		return err
 	}
-	if len(corsi) == 0 {
-		fmt.Fprintln(a.uscita, "L'elenco è già vuoto.")
+	if len(insegnamenti) == 0 {
+		a.impostaNotifica("L'elenco è già vuoto.")
 		return nil
 	}
-	conferma, err := a.selettore.Scegli("Eliminare tutti i corsi?", []string{"No, annulla", "Sì, elimina tutto"})
+	a.pulisciSchermo()
+	conferma, err := a.selettore.Scegli("Eliminare tutti gli insegnamenti?", []string{"No, annulla", "Sì, elimina tutto"})
 	if err != nil {
 		return err
 	}
 	if conferma != 1 {
-		fmt.Fprintln(a.uscita, "Operazione annullata.")
+		a.impostaNotifica("Operazione annullata.")
 		return nil
 	}
 	if err := a.archivio.Pulisci(); err != nil {
 		return err
 	}
-	fmt.Fprintln(a.uscita, "Tutti i corsi sono stati rimossi.")
+	a.impostaNotifica("Tutti gli insegnamenti sono stati rimossi.")
 	return nil
 }
 
@@ -385,28 +413,36 @@ func (a *Applicazione) caricaInsegnamenti(ctx context.Context) error {
 	return nil
 }
 
-func (a *Applicazione) mostraRiepilogoOrari(soggetto string, lezioni []unimi.Lezione) {
+func (a *Applicazione) mostraCalendario(soggetto string, lezioni []unimi.Lezione) {
+	if err := a.apriCalendario(soggetto, lezioni); err != nil {
+		a.impostaNotifica("Errore: visualizzazione calendario: %v", err)
+	}
+}
+
+func (a *Applicazione) apriCalendario(soggetto string, lezioni []unimi.Lezione) error {
 	if len(lezioni) == 0 {
-		fmt.Fprintf(a.uscita, "Nessuna lezione pubblicata per %s.\n", soggetto)
-		return
+		a.impostaNotifica("Nessuna lezione pubblicata per %s.", soggetto)
+		return nil
 	}
-	prima, ultima := lezioni[0].Data, lezioni[0].Data
-	for _, lezione := range lezioni[1:] {
-		if lezione.Data.Before(prima) {
-			prima = lezione.Data
-		}
-		if lezione.Data.After(ultima) {
-			ultima = lezione.Data
-		}
-	}
-	parolaLezioni := "lezioni"
-	if len(lezioni) == 1 {
-		parolaLezioni = "lezione"
-	}
-	fmt.Fprintf(a.uscita, "Recuperate %d %s per %s, dal %s al %s.\n", len(lezioni), parolaLezioni, soggetto, prima.Format("02/01/2006"), ultima.Format("02/01/2006"))
-	fmt.Fprintln(a.uscita, "La visualizzazione nel calendario sarà aggiunta nella fase 4.")
+	return a.calendario.Mostra(soggetto, lezioni)
 }
 
 func (a *Applicazione) leggi(messaggio string) (string, error) {
 	return a.lettore.Leggi(messaggio)
+}
+
+func (a *Applicazione) pulisciSchermo() {
+	fmt.Fprint(a.uscita, pulisciTerminale)
+}
+
+func (a *Applicazione) impostaNotifica(formato string, argomenti ...any) {
+	a.notifica = fmt.Sprintf(formato, argomenti...)
+}
+
+func (a *Applicazione) mostraNotifica() {
+	if a.notifica == "" {
+		return
+	}
+	fmt.Fprintln(a.uscita, a.notifica)
+	a.notifica = ""
 }

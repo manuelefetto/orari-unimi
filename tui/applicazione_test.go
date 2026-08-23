@@ -12,10 +12,12 @@ import (
 )
 
 type sorgenteFinta struct {
-	anni         []unimi.AnnoAccademico
-	corsi        []unimi.CorsoDiStudio
-	docenti      []unimi.Docente
-	insegnamenti []unimi.Insegnamento
+	anni                      []unimi.AnnoAccademico
+	corsi                     []unimi.CorsoDiStudio
+	docenti                   []unimi.Docente
+	insegnamenti              []unimi.Insegnamento
+	chiamateOrariCorso        int
+	chiamateOrariInsegnamento int
 }
 
 func (s *sorgenteFinta) RecuperaAnniAccademici(context.Context) ([]unimi.AnnoAccademico, error) {
@@ -35,6 +37,7 @@ func (s *sorgenteFinta) RecuperaInsegnamenti(context.Context, string) ([]unimi.I
 }
 
 func (s *sorgenteFinta) RecuperaOrariCorso(context.Context, string, string, unimi.IntervalloDate) ([]unimi.Lezione, error) {
+	s.chiamateOrariCorso++
 	return lezioniFinte(), nil
 }
 
@@ -43,6 +46,7 @@ func (s *sorgenteFinta) RecuperaOrariDocente(context.Context, string, string, un
 }
 
 func (s *sorgenteFinta) RecuperaOrariInsegnamento(context.Context, string, string, unimi.IntervalloDate) ([]unimi.Lezione, error) {
+	s.chiamateOrariInsegnamento++
 	return lezioniFinte(), nil
 }
 
@@ -60,6 +64,19 @@ type selettoreFinto struct {
 type lettoreFinto struct {
 	risposte  []string
 	posizione int
+}
+
+type calendarioFinto struct {
+	chiamate int
+	titolo   string
+	lezioni  []unimi.Lezione
+}
+
+func (c *calendarioFinto) Mostra(titolo string, lezioni []unimi.Lezione) error {
+	c.chiamate++
+	c.titolo = titolo
+	c.lezioni = append([]unimi.Lezione(nil), lezioni...)
+	return nil
 }
 
 func (l *lettoreFinto) Leggi(string) (string, error) {
@@ -82,42 +99,53 @@ func TestApplicazioneSelezionaCorso(t *testing.T) {
 		anni:  []unimi.AnnoAccademico{{Codice: "2026", Nome: "2026/2027"}},
 		corsi: []unimi.CorsoDiStudio{{Codice: "F1X", Nome: "Informatica"}},
 	}
-	archivio, _ := NuovoArchivioCorsi(filepath.Join(t.TempDir(), "corsi.json"))
+	archivio, _ := NuovoArchivioInsegnamenti(filepath.Join(t.TempDir(), "insegnamenti.json"))
 	lettore := &lettoreFinto{risposte: []string{"info"}}
 	var uscita bytes.Buffer
 	selettore := &selettoreFinto{scelte: []int{0, 0, 4}}
-	app, err := NuovaApplicazione(lettore, &uscita, sorgente, archivio, selettore)
+	calendario := &calendarioFinto{}
+	app, err := NuovaApplicazione(lettore, &uscita, sorgente, archivio, selettore, calendario)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := app.Esegui(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(uscita.String(), "Recuperate 1 lezione per Informatica") {
-		t.Fatalf("output inatteso:\n%s", uscita.String())
+	if calendario.chiamate != 1 || calendario.titolo != "Informatica" || len(calendario.lezioni) != 1 {
+		t.Fatalf("calendario inatteso: %#v", calendario)
 	}
 }
 
-func TestApplicazioneGestisceMieiCorsi(t *testing.T) {
+func TestApplicazioneGestisceMieiInsegnamenti(t *testing.T) {
 	sorgente := &sorgenteFinta{
-		anni:  []unimi.AnnoAccademico{{Codice: "2026", Nome: "2026/2027"}},
-		corsi: []unimi.CorsoDiStudio{{Codice: "F1X", Nome: "Informatica"}},
+		anni: []unimi.AnnoAccademico{{Codice: "2026", Nome: "2026/2027"}},
+		insegnamenti: []unimi.Insegnamento{{
+			Codice: "ECF1X-1", Descrizione: "Algoritmi [M. ROSSI]",
+		}},
 	}
-	archivio, _ := NuovoArchivioCorsi(filepath.Join(t.TempDir(), "corsi.json"))
-	// I miei orari -> aggiungi -> cerca -> seleziona -> pulisci -> conferma -> indietro -> esci.
-	lettore := &lettoreFinto{risposte: []string{"info"}}
+	archivio, _ := NuovoArchivioInsegnamenti(filepath.Join(t.TempDir(), "insegnamenti.json"))
+	// I miei orari -> aggiungi -> cerca -> seleziona -> mostra calendario ->
+	// rimuovi -> seleziona -> indietro -> esci.
+	lettore := &lettoreFinto{risposte: []string{"algoritmi"}}
 	var uscita bytes.Buffer
-	selettore := &selettoreFinto{scelte: []int{3, 1, 0, 3, 1, 4, 4}}
-	app, _ := NuovaApplicazione(lettore, &uscita, sorgente, archivio, selettore)
+	selettore := &selettoreFinto{scelte: []int{3, 1, 0, 0, 2, 0, 4, 4}}
+	calendario := &calendarioFinto{}
+	app, _ := NuovaApplicazione(lettore, &uscita, sorgente, archivio, selettore, calendario)
 	if err := app.Esegui(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	corsi, err := archivio.Elenca()
-	if err != nil || len(corsi) != 0 {
-		t.Fatalf("archivio inatteso: %#v, errore=%v", corsi, err)
+	insegnamenti, err := archivio.Elenca()
+	if err != nil || len(insegnamenti) != 0 {
+		t.Fatalf("archivio inatteso: %#v, errore=%v", insegnamenti, err)
 	}
-	if !strings.Contains(uscita.String(), "Tutti i corsi sono stati rimossi") {
-		t.Fatalf("output inatteso:\n%s", uscita.String())
+	if sorgente.chiamateOrariCorso != 0 || sorgente.chiamateOrariInsegnamento != 1 {
+		t.Fatalf("endpoint orari errato: corsi=%d, insegnamenti=%d", sorgente.chiamateOrariCorso, sorgente.chiamateOrariInsegnamento)
+	}
+	if calendario.chiamate != 1 || !strings.Contains(uscita.String(), "aggiunto ai tuoi insegnamenti") {
+		t.Fatalf("flusso insegnamenti inatteso:\n%s", uscita.String())
+	}
+	if strings.Count(uscita.String(), pulisciTerminale) < 5 {
+		t.Fatalf("il terminale non viene pulito ai cambi di menu:\n%q", uscita.String())
 	}
 }
 
@@ -128,15 +156,16 @@ func TestApplicazioneSelezionaInsegnamento(t *testing.T) {
 			Codice: "ECF1X-1", Descrizione: "Algoritmi [M. ROSSI]",
 		}},
 	}
-	archivio, _ := NuovoArchivioCorsi(filepath.Join(t.TempDir(), "corsi.json"))
+	archivio, _ := NuovoArchivioInsegnamenti(filepath.Join(t.TempDir(), "insegnamenti.json"))
 	selettore := &selettoreFinto{scelte: []int{2, 0, 4}}
 	var uscita bytes.Buffer
 	lettore := &lettoreFinto{risposte: []string{"algoritmi"}}
-	app, _ := NuovaApplicazione(lettore, &uscita, sorgente, archivio, selettore)
+	calendario := &calendarioFinto{}
+	app, _ := NuovaApplicazione(lettore, &uscita, sorgente, archivio, selettore, calendario)
 	if err := app.Esegui(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(uscita.String(), "Recuperate 1 lezione per Algoritmi") {
-		t.Fatalf("output inatteso:\n%s", uscita.String())
+	if calendario.chiamate != 1 || calendario.titolo != "Algoritmi [M. ROSSI]" || len(calendario.lezioni) != 1 {
+		t.Fatalf("calendario inatteso: %#v", calendario)
 	}
 }

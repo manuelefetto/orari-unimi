@@ -83,13 +83,15 @@ func avviaTUI(ctx context.Context, client *unimi.Client) {
 	if percorso == "" {
 		cartella, err := os.UserConfigDir()
 		terminaSeErrore(err)
-		percorso = filepath.Join(cartella, "orari-unimi", "corsi.json")
+		percorso = filepath.Join(cartella, "orari-unimi", "insegnamenti.json")
 	}
-	archivio, err := tui.NuovoArchivioCorsi(percorso)
+	archivio, err := tui.NuovoArchivioInsegnamenti(percorso)
 	terminaSeErrore(err)
 	lettore, err := tui.NuovoLettoreTastiera(os.Stdout)
 	terminaSeErrore(err)
-	applicazione, err := tui.NuovaApplicazione(lettore, os.Stdout, client, archivio, tui.NuovoSelettoreManuCLI())
+	calendario, err := tui.NuovoCalendarioTerminale(os.Stdout)
+	terminaSeErrore(err)
+	applicazione, err := tui.NuovaApplicazione(lettore, os.Stdout, client, archivio, tui.NuovoSelettoreManuCLI(), calendario)
 	terminaSeErrore(err)
 	terminaSeErrore(applicazione.Esegui(ctx))
 }
