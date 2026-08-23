@@ -17,6 +17,9 @@ type sorgenteUNIMI interface {
 	RecuperaCorsi(context.Context, string) ([]unimi.CorsoDiStudio, error)
 	RecuperaDocenti(context.Context, string) ([]unimi.Docente, error)
 	RecuperaInsegnamenti(context.Context, string) ([]unimi.Insegnamento, error)
+	RecuperaOrariCorso(context.Context, string, string, unimi.IntervalloDate) ([]unimi.Lezione, error)
+	RecuperaOrariDocente(context.Context, string, string, unimi.IntervalloDate) ([]unimi.Lezione, error)
+	RecuperaOrariInsegnamento(context.Context, string, string, unimi.IntervalloDate) ([]unimi.Lezione, error)
 }
 
 // Applicazione gestisce la navigazione testuale e mantiene in memoria le liste
@@ -89,7 +92,12 @@ func (a *Applicazione) menuPerCorso(ctx context.Context) {
 		return
 	}
 	if selezionato {
-		fmt.Fprintf(a.uscita, "Corso selezionato: %s (%s). Gli orari saranno disponibili nella fase 3.\n", corso.Nome, corso.Codice)
+		lezioni, err := a.sorgente.RecuperaOrariCorso(ctx, a.anno.Codice, corso.Codice, unimi.IntervalloDate{})
+		if err != nil {
+			fmt.Fprintf(a.uscita, "Errore: recupero orari del corso: %v\n", err)
+			return
+		}
+		a.mostraRiepilogoOrari(corso.Nome, lezioni)
 	}
 }
 
@@ -108,7 +116,12 @@ func (a *Applicazione) menuPerDocente(ctx context.Context) {
 		return
 	}
 	if selezionata {
-		fmt.Fprintf(a.uscita, "Docente selezionato: %s (%s). Gli orari saranno disponibili nella fase 3.\n", voce.Nome, voce.Codice)
+		lezioni, err := a.sorgente.RecuperaOrariDocente(ctx, a.anno.Codice, voce.Codice, unimi.IntervalloDate{})
+		if err != nil {
+			fmt.Fprintf(a.uscita, "Errore: recupero orari del docente: %v\n", err)
+			return
+		}
+		a.mostraRiepilogoOrari(voce.Nome, lezioni)
 	}
 }
 
@@ -131,7 +144,12 @@ func (a *Applicazione) menuPerInsegnamento(ctx context.Context) {
 		return
 	}
 	if selezionata {
-		fmt.Fprintf(a.uscita, "Insegnamento selezionato: %s (%s). Gli orari saranno disponibili nella fase 3.\n", voce.Nome, voce.Codice)
+		lezioni, err := a.sorgente.RecuperaOrariInsegnamento(ctx, a.anno.Codice, voce.Codice, unimi.IntervalloDate{})
+		if err != nil {
+			fmt.Fprintf(a.uscita, "Errore: recupero orari dell'insegnamento: %v\n", err)
+			return
+		}
+		a.mostraRiepilogoOrari(voce.Nome, lezioni)
 	}
 }
 
@@ -149,7 +167,7 @@ func (a *Applicazione) menuMieiOrari(ctx context.Context) error {
 		}
 		switch scelta {
 		case 0:
-			if err := a.mostraCorsiSalvati(); err != nil {
+			if err := a.mostraOrariSalvati(ctx); err != nil {
 				return err
 			}
 		case 1:
@@ -245,7 +263,7 @@ func (a *Applicazione) aggiungiCorso(ctx context.Context) error {
 	return nil
 }
 
-func (a *Applicazione) mostraCorsiSalvati() error {
+func (a *Applicazione) mostraOrariSalvati(ctx context.Context) error {
 	corsi, err := a.archivio.Elenca()
 	if err != nil {
 		return err
@@ -254,11 +272,16 @@ func (a *Applicazione) mostraCorsiSalvati() error {
 		fmt.Fprintln(a.uscita, "Non hai ancora selezionato corsi.")
 		return nil
 	}
-	for i, corso := range corsi {
-		fmt.Fprintf(a.uscita, "%d) %s [%s, a.a. %s]\n", i+1, corso.Nome, corso.Codice, corso.Anno)
+	lezioni := make([]unimi.Lezione, 0)
+	for _, corso := range corsi {
+		orariCorso, err := a.sorgente.RecuperaOrariCorso(ctx, corso.Anno, corso.Codice, unimi.IntervalloDate{})
+		if err != nil {
+			return fmt.Errorf("recupero orari di %s: %w", corso.Nome, err)
+		}
+		lezioni = append(lezioni, orariCorso...)
 	}
-	buf, err := a.leggi("Gli orari saranno disponibili nella fase 3. Premi INVIO per continuare: ")
-	_ = buf
+	a.mostraRiepilogoOrari("i corsi salvati", lezioni)
+	_, err = a.leggi("Premi INVIO per continuare: ")
 	return err
 }
 
@@ -360,6 +383,28 @@ func (a *Applicazione) caricaInsegnamenti(ctx context.Context) error {
 	}
 	a.attivita = attivita
 	return nil
+}
+
+func (a *Applicazione) mostraRiepilogoOrari(soggetto string, lezioni []unimi.Lezione) {
+	if len(lezioni) == 0 {
+		fmt.Fprintf(a.uscita, "Nessuna lezione pubblicata per %s.\n", soggetto)
+		return
+	}
+	prima, ultima := lezioni[0].Data, lezioni[0].Data
+	for _, lezione := range lezioni[1:] {
+		if lezione.Data.Before(prima) {
+			prima = lezione.Data
+		}
+		if lezione.Data.After(ultima) {
+			ultima = lezione.Data
+		}
+	}
+	parolaLezioni := "lezioni"
+	if len(lezioni) == 1 {
+		parolaLezioni = "lezione"
+	}
+	fmt.Fprintf(a.uscita, "Recuperate %d %s per %s, dal %s al %s.\n", len(lezioni), parolaLezioni, soggetto, prima.Format("02/01/2006"), ultima.Format("02/01/2006"))
+	fmt.Fprintln(a.uscita, "La visualizzazione nel calendario sarà aggiunta nella fase 4.")
 }
 
 func (a *Applicazione) leggi(messaggio string) (string, error) {

@@ -15,6 +15,13 @@ insegnamenti attraverso suggerimenti ottenuti dal portale UNIMI, oltre a gestire
 i corsi salvati nella sezione "I miei orari".
 La ricerca non distingue tra maiuscole, minuscole e vocali accentate.
 
+La selezione di un corso, docente o insegnamento recupera gli orari effettivi
+pubblicati da UNIMI e ne mostra un riepilogo. Il package `unimi` espone inoltre
+le funzioni `RecuperaOrariCorso`, `RecuperaOrariDocente` e
+`RecuperaOrariInsegnamento`: passando un `IntervalloDate` vuoto si ottiene
+l'intero anno accademico, mentre un intervallo valorizzato filtra entrambe le
+date incluse.
+
 I corsi personali vengono salvati in `orari-unimi/corsi.json` all'interno della
 cartella di configurazione dell'utente. Il percorso può essere personalizzato
 impostando la variabile d'ambiente `ORARI_UNIMI_FILE`.

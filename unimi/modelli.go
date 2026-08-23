@@ -14,11 +14,18 @@ type PeriodoDidattico struct {
 
 // CorsoDiStudio è una voce selezionabile nella ricerca per corso.
 type CorsoDiStudio struct {
-	Codice  string             `json:"valore"`
-	Nome    string             `json:"label"`
-	Tipo    string             `json:"tipo"`
-	Facolta string             `json:"scuola"`
-	Periodi []PeriodoDidattico `json:"pub_periodi"`
+	Codice   string              `json:"valore"`
+	Nome     string              `json:"label"`
+	Tipo     string              `json:"tipo"`
+	Facolta  string              `json:"scuola"`
+	Periodi  []PeriodoDidattico  `json:"pub_periodi"`
+	Percorsi []PercorsoDidattico `json:"elenco_anni"`
+}
+
+// PercorsoDidattico identifica un anno, curriculum o gruppo di un corso.
+type PercorsoDidattico struct {
+	Codice string `json:"valore"`
+	Nome   string `json:"label"`
 }
 
 // Facolta è una facoltà, scuola o altra struttura didattica del portale.

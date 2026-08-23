@@ -48,6 +48,9 @@ func (l *LettoreTastiera) Leggi(messaggio string) (string, error) {
 				caratteri = caratteri[:len(caratteri)-1]
 				fmt.Fprint(l.uscita, "\b \b")
 			}
+		case keyboard.KeySpace:
+			caratteri = append(caratteri, ' ')
+			fmt.Fprint(l.uscita, " ")
 		case keyboard.KeyCtrlC:
 			return "", io.EOF
 		default:

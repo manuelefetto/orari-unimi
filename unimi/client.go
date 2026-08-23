@@ -79,6 +79,9 @@ func (c *Client) RecuperaCorsi(ctx context.Context, anno string) ([]CorsoDiStudi
 		for j := range corsi[i].Periodi {
 			riparaTesto(&corsi[i].Periodi[j].Nome)
 		}
+		for j := range corsi[i].Percorsi {
+			riparaTesto(&corsi[i].Percorsi[j].Nome)
+		}
 	}
 	return corsi, nil
 }

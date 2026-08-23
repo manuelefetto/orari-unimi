@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"orari-unimi/unimi"
 )
@@ -31,6 +32,24 @@ func (s *sorgenteFinta) RecuperaDocenti(context.Context, string) ([]unimi.Docent
 
 func (s *sorgenteFinta) RecuperaInsegnamenti(context.Context, string) ([]unimi.Insegnamento, error) {
 	return s.insegnamenti, nil
+}
+
+func (s *sorgenteFinta) RecuperaOrariCorso(context.Context, string, string, unimi.IntervalloDate) ([]unimi.Lezione, error) {
+	return lezioniFinte(), nil
+}
+
+func (s *sorgenteFinta) RecuperaOrariDocente(context.Context, string, string, unimi.IntervalloDate) ([]unimi.Lezione, error) {
+	return lezioniFinte(), nil
+}
+
+func (s *sorgenteFinta) RecuperaOrariInsegnamento(context.Context, string, string, unimi.IntervalloDate) ([]unimi.Lezione, error) {
+	return lezioniFinte(), nil
+}
+
+func lezioniFinte() []unimi.Lezione {
+	return []unimi.Lezione{{
+		ID: "1", Data: time.Date(2026, 9, 15, 0, 0, 0, 0, time.UTC),
+	}}
 }
 
 type selettoreFinto struct {
@@ -74,7 +93,7 @@ func TestApplicazioneSelezionaCorso(t *testing.T) {
 	if err := app.Esegui(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(uscita.String(), "Corso selezionato: Informatica") {
+	if !strings.Contains(uscita.String(), "Recuperate 1 lezione per Informatica") {
 		t.Fatalf("output inatteso:\n%s", uscita.String())
 	}
 }
@@ -117,7 +136,7 @@ func TestApplicazioneSelezionaInsegnamento(t *testing.T) {
 	if err := app.Esegui(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(uscita.String(), "Insegnamento selezionato: Algoritmi") {
+	if !strings.Contains(uscita.String(), "Recuperate 1 lezione per Algoritmi") {
 		t.Fatalf("output inatteso:\n%s", uscita.String())
 	}
 }
