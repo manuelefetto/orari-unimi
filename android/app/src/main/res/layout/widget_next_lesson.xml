@@ -9,17 +9,17 @@
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="36dp"
+        android:layout_height="48dp"
         android:gravity="center_vertical"
         android:orientation="horizontal">
 
         <ImageButton
             android:id="@+id/widget_previous"
-            android:layout_width="36dp"
-            android:layout_height="36dp"
+            android:layout_width="56dp"
+            android:layout_height="48dp"
             android:background="@android:color/transparent"
             android:contentDescription="Giorno precedente"
-            android:padding="8dp"
+            android:padding="14dp"
             android:src="@drawable/widget_chevron_left"
             android:tint="@color/widget_accent" />
 
@@ -35,15 +35,15 @@
             android:text="AGENDA DI OGGI"
             android:textAllCaps="true"
             android:textColor="@color/widget_accent"
-            android:textSize="11sp" />
+            android:textSize="13sp" />
 
         <ImageButton
             android:id="@+id/widget_next"
-            android:layout_width="36dp"
-            android:layout_height="36dp"
+            android:layout_width="56dp"
+            android:layout_height="48dp"
             android:background="@android:color/transparent"
             android:contentDescription="Giorno successivo"
-            android:padding="8dp"
+            android:padding="14dp"
             android:src="@drawable/widget_chevron_right"
             android:tint="@color/widget_accent" />
     </LinearLayout>
@@ -59,7 +59,7 @@
         android:maxLines="1"
         android:text="Mercoledì 17 settembre · 3 lezioni"
         android:textColor="@color/widget_text"
-        android:textSize="13sp" />
+        android:textSize="14sp" />
 
     <LinearLayout
         android:id="@+id/widget_lessons"
@@ -76,5 +76,5 @@
         android:padding="8dp"
         android:text="Nessuna lezione"
         android:textColor="@color/widget_text_secondary"
-        android:textSize="12sp" />
+        android:textSize="14sp" />
 </LinearLayout>

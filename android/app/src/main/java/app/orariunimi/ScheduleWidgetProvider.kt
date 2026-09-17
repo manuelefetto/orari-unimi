@@ -24,11 +24,12 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
         val appWidgetId = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID,
             AppWidgetManager.INVALID_APPWIDGET_ID)
         if (appWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID) return
-        val current = selectedDay(context, appWidgetId)
+        val weekend = LocalStore(context).showWeekend
+        val current = openingDay(selectedDay(context, appWidgetId), weekend)
         val selected = when (intent.action) {
-            ACTION_PREVIOUS -> current.minusDays(1)
-            ACTION_NEXT -> current.plusDays(1)
-            else -> LocalDate.now()
+            ACTION_PREVIOUS -> adjacentCalendarDay(current, -1, weekend)
+            ACTION_NEXT -> adjacentCalendarDay(current, 1, weekend)
+            else -> openingDay(LocalDate.now(), weekend)
         }
         preferences(context).edit().putString(dayKey(appWidgetId), selected.toString()).apply()
         updateAsync(context, AppWidgetManager.getInstance(context), intArrayOf(appWidgetId))
@@ -54,12 +55,17 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
     }
 
     private fun createViews(context: Context, appWidgetId: Int): RemoteViews {
-        val saved = LocalStore(context).saved()
+        val store = LocalStore(context)
+        val saved = store.saved()
         val snapshot = if (saved.isEmpty()) null else runCatching {
             UnimiApi(cache = ResponseCache(File(context.cacheDir, "orari-responses"))).cachedSavedLessons(saved)
         }.getOrNull()
         val today = LocalDate.now()
-        val selected = selectedDay(context, appWidgetId)
+        val storedDay = selectedDay(context, appWidgetId)
+        val selected = openingDay(storedDay, store.showWeekend)
+        if (selected != storedDay) {
+            preferences(context).edit().putString(dayKey(appWidgetId), selected.toString()).apply()
+        }
         val selectedLessons = snapshot?.lessons?.let { lessonsForDay(it, selected) }
         val views = RemoteViews(context.packageName, R.layout.widget_next_lesson)
         val openApp = Intent(context, MainActivity::class.java)
